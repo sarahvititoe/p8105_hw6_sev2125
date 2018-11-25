@@ -79,7 +79,7 @@ homicides %>%
 
 Create a plot that shows the estimated ORs and CIs for each city. Organize cities according to estimated OR, and comment on the plot.
 
-Problem 2
+### Problem 2
 In this probelm, you will analyze data gathered to understand the effects of several variables on a child’s birthweight. This dataset, available here, consists of roughly 4000 children and includes the following variables:
 
 babysex: baby’s sex (male = 1, female = 2)
@@ -104,12 +104,159 @@ smoken: average number of cigarettes smoked per day during pregnancy
 wtgain: mother’s weight gain during pregnancy (pounds)
 Load and clean the data for regression analysis (i.e. convert numeric to factor where appropriate, check for missing data, etc.).
 
-Propose a regression model for birthweight. This model may be based on a hypothesized structure for the factors that underly birthweight, on a data-driven model-building process, or a combination of the two. Describe your modeling process and show a plot of model residuals against fitted values – use add_predictions and add_residuals in making this plot.
+I'll start off by recoding race into "white" and "non-white" categories 
+```{r}
+babies <- read_csv("./data/birthweight.csv") %>% 
+  mutate(frace = ifelse(frace == "9", NA, frace)) %>% 
+  mutate_at(vars(babysex, malform, frace, mrace), funs(as.factor)) 
 
-Compare your model to two others:
 
-One using length at birth and gestational age as predictors (main effects only)
-One using head circumference, length, sex, and all interactions (including the three-way interaction) between these
-Make this comparison in terms of the cross-validated prediction error; use crossv_mc and functions in purrr as appropriate.
+babies %>% 
+  summarise_all(funs(sum(is.na(.)))) %>% 
+  glimpse
+```
 
-Note that although we expect your model to be reasonable, model building itself is not a main idea of the course and we don’t necessarily expect your model to be “optimal”.
+We have no missing values. 
+
+*"Propose a regression model for birthweight. This model may be based on a hypothesized structure for the factors that underly birthweight, on a data-driven model-building process, or a combination of the two."*
+
+```{r}
+library(modelr) 
+library(mgcv) 
+set.seed(23)
+```
+
+I will be sticking only to factors about the pregnancy that are known during the third trimester (before the baby's birth); while I'm sure the baby's length is an excellent predictor of weight, that wouldn't be a clinically useful predictor. 
+
+Based off what I know about birthweight, I imagine that the baby's gestational age is the most important factor of birthweight. Other important factors would include the baby sex, mother's pre-pregnancy BMI, weight gain during pregancy, parity and baby's head circumference.
+
+Since I'm using pre-pregnancy BMI as a predictor, I will not use pre-pregnancy weight, or mother's height as predictors. I will also not use weight at delivery, since I am using weight gain during pregancy as a predictor. I will not use baby length, since this is difficult to measure during pregnancy, and is a proxy for gestational age. Confounders that would be interesting to look at would include smoking, paternal and maternal race, income, malformations, mom's age, and mom's age at menarche. 
+
+I will use a linear model, since I am more familiar model selection for linear models. I will do backwards selection, where I will remove the variable with the highest p-values until I get a model with only significant values. I will use a cutoff value of alpha = 0.05 for variable selection, so that if a variable significantly affects my predictions in non-linear models, but is not significant in my linear model, I can see this when I compare my models. 
+
+```{r}
+lin_mod_babies <- lm(bwt ~ gaweeks + bhead + babysex + fincome + frace + malform + menarche + momage + mrace + parity + ppbmi + smoken + wtgain, data = babies)
+
+lin_mod_babies %>% broom::tidy() %>% filter(p.value > 0.05) %>% arrange(desc(p.value))
+```
+
+None of the dummy variables for the father's race seems to not be a significant predictor of baby's birthweight, so we'll remove this from our model. 
+
+```{r}
+lin_mod_babies <- lm(bwt ~ gaweeks + bhead + babysex + fincome + malform + menarche + momage + mrace + parity + ppbmi + smoken + wtgain, data = babies)
+
+lin_mod_babies %>% broom::tidy() %>% filter(p.value > 0.05) %>% arrange(desc(p.value))
+```
+
+Malformations is the next least-significant. Let's remove this predictor. 
+
+```{r}
+lin_mod_babies <- lm(bwt ~ gaweeks + bhead + babysex + fincome + menarche + momage + mrace + parity + ppbmi + smoken + wtgain, data = babies)
+
+lin_mod_babies %>% broom::tidy() %>% filter(p.value > 0.05) %>% arrange(desc(p.value))
+```
+
+We'll remove mom's age.
+
+```{r}
+lin_mod_babies <- lm(bwt ~ gaweeks + bhead + babysex + fincome + menarche + mrace + parity + ppbmi + smoken + wtgain, data = babies)
+
+lin_mod_babies %>% broom::tidy() %>% filter(p.value > 0.05) %>% arrange(desc(p.value))
+```
+
+Remove menarche. 
+
+```{r}
+lin_mod_babies <- lm(bwt ~ gaweeks + bhead + babysex + fincome + mrace + parity + ppbmi + smoken + wtgain, data = babies)
+
+lin_mod_babies %>% broom::tidy() %>% filter(p.value > 0.05) %>% arrange(desc(p.value))
+```
+
+Remove financial income
+
+```{r}
+lin_mod_babies <- lm(bwt ~ gaweeks + bhead + babysex + mrace + parity + ppbmi + smoken + wtgain, data = babies)
+
+lin_mod_babies %>% broom::tidy() %>% filter(p.value > 0.05) %>% arrange(desc(p.value))
+```
+
+Remove parity.
+```{r}
+lin_mod_babies <- lm(bwt ~ gaweeks + bhead + babysex + mrace + ppbmi + smoken + wtgain, data = babies)
+
+lin_mod_babies %>% broom::glance() %>% arrange(desc(p.value))
+```
+
+Add interaction
+```{r}
+lin_mod_babies <- lm(bwt ~ (gaweeks + bhead + babysex + mrace + ppbmi + smoken + wtgain)^2, data = babies)
+
+lin_mod_babies %>% broom::glance() %>% arrange(desc(p.value))
+```
+
+*Describe your modeling process and show a plot of model residuals against fitted values – use add_predictions and add_residuals in making this plot.*
+
+```{r}
+babies %>% 
+  ggplot(aes(x = gaweeks, y = bwt)) + 
+  geom_point(alpha = 0.2) + 
+  labs(
+      title = "Linear Model of Gestational Age and Birthweight", 
+      y = "Baby Birthweight",
+      x = "Gestational Age in Weeks"
+    ) +
+    theme_bw() + 
+    theme(legend.position = "bottom")
+
+babies %>% 
+  modelr::add_predictions(lin_mod_babies) %>% 
+  modelr::add_residuals(lin_mod_babies) %>% 
+  ggplot(aes(x = pred, y = resid)) + 
+  geom_point(alpha = 0.2) + 
+  labs(
+    title = "Linear Model Predictions and Residuals",
+    y = "Residuals",
+    x = "Predictions"
+     ) + 
+    theme_bw() + 
+    theme(legend.position = "bottom")
+```
+
+Our residuals seem to be relatively constant over the range of predictions. 
+
+*Compare your model to two others:*
+
+*One using length at birth and gestational age as predictors (main effects only)*
+
+*One using head circumference, length, sex, and all interactions (including the three-way interaction) between these* 
+
+*Make this comparison in terms of the cross-validated prediction error; use crossv_mc and functions in purrr as appropriate.*
+
+```{r}
+cv_babies <- babies %>% 
+  crossv_mc(100) %>% 
+  mutate(train = map(train, as_tibble),
+         test = map(test, as_tibble))
+```
+
+```{r}
+cv_babies_compare <- cv_babies %>% 
+  mutate(my_mod = map(train, ~lm(bwt ~ (gaweeks + bhead + babysex + mrace + ppbmi + smoken + wtgain)^2, data = .x)),
+         main_mod = map(train, ~lm(bwt ~ gaweeks + blength, data = .x)),
+         interact_mod = map(train, ~lm(bwt ~ bhead * blength * babysex, data = .x))) %>% 
+  mutate(rmse_my_mod    = map2_dbl(my_mod, test, ~rmse(model = .x, data = .y)),
+         rmse_main_mod = map2_dbl(main_mod, test, ~rmse(model = .x, data = .y)),
+         rmse_interact_mod = map2_dbl(interact_mod, test, ~rmse(model = .x, data = .y)))
+```
+
+```{r}
+cv_babies_compare %>% 
+  select(starts_with("rmse")) %>% 
+  gather(key = model, value = rmse) %>% 
+  mutate(model = str_replace(model, "rmse_", ""),
+         model = fct_inorder(model)) %>% 
+  ggplot(aes(x = model, y = rmse)) + 
+  geom_violin()
+```
+
+My model is better than just the main effect, but not as good as the interaction model. 
