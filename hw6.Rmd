@@ -39,28 +39,28 @@ homicides <- read_csv("./data/homicide-data.csv") %>%
 baltimore <- homicides %>% 
   filter(city_state == "Baltimore, MD")
 
-balt_lm <- glm(status ~ victim_age + victim_sex + race, data = baltimore, family = "binomial") 
+balt_lm <- glm(status ~ victim_age + victim_sex + race, data = baltimore, family = "binomial") %>% 
+  broom::tidy()
 ```
 
 *"Save the output of glm as an R object; apply the  broom::tidy to this object; and obtain the estimate and confidence interval of the adjusted odds ratio for solving homicides comparing non-white victims to white victims keeping all other variables fixed."*
 
 ```{r}
-balt_lm_tidy <- balt_lm %>% 
-  broom::tidy() %>% 
+balt_tidy <- baltimore %>% 
+  select(victim_age, victim_sex, city_state, race, status) %>% 
+  mutate(status = as.factor(status)) %>% 
+  filter(victim_sex != "Unknown") %>% 
+  group_by(city_state) %>% 
+  nest() %>% 
+  mutate(models = map(data, ~glm(status ~ victim_age + victim_sex + race, data = .x, family = binomial))) %>%
+  mutate(models_tidy = map(models, ~broom::tidy(.))) %>% 
+  mutate(models_ci = map(models, ~broom::confint_tidy(.))) %>% 
+  select(city_state, models_tidy, models_ci) %>% 
+  unnest %>% 
   filter(term == "raceNon-White")
-
-balt_lm_ci <- balt_lm %>% 
-  broom::confint_tidy() %>% 
-  slice(4) %>% 
-  mutate(term = "raceNon-White") 
-
-balt_lm_tidy <- balt_lm_tidy %>% 
-  full_join(balt_lm_ci, by = "term")
-
-rm(balt_lm_ci)
 ```
 
-Our estimate of the odds ratio for solved homicides is `r balt_lm_tidy %>%  mutate(estimate = round(exp(estimate), 3)) %>% select(estimate)`. We are 95% confident that the true odds ratio for solving homicides, comparing non-Whites to whites is (`r balt_lm_tidy %>%  mutate(conf.low = round(exp(conf.low), 3)) %>% select(conf.low)`, `r balt_lm_tidy %>%  mutate(conf.high = round(exp(conf.high), 3)) %>% select(conf.high)`).
+Our estimate of the odds ratio for solved homicides is `r balt_tidy %>%  mutate(estimate = round(exp(estimate), 3)) %>% select(estimate)`. We are 95% confident that the true odds ratio for solving homicides, comparing non-Whites to whites is (`r balt_tidy %>% mutate(conf.low = round(exp(conf.low), 3)) %>% select(conf.low)`, `r balt_tidy %>%  mutate(conf.high = round(exp(conf.high), 3)) %>% select(conf.high)`).
 
 *"Now run glm for each of the cities in your dataset, and extract the adjusted odds ratio (and CI) for solving homicides comparing non-white victims to white victims. Do this within a “tidy” pipeline, making use of purrr::map, list columns, and unnest as necessary to create a dataframe with estimated ORs and CIs for each city."*
 
@@ -68,12 +68,17 @@ Our estimate of the odds ratio for solved homicides is `r balt_lm_tidy %>%  muta
 homicides %>% 
   select(victim_age, victim_sex, city_state, race, status) %>% 
   mutate(status = as.factor(status)) %>% 
+  filter(victim_sex != "Unknown") %>% 
   group_by(city_state) %>% 
   nest() %>% 
   mutate(models = map(data, ~glm(status ~ victim_age + race + victim_sex, data = .x, family = binomial))) %>%
-  mutate(models_tidy = map(models, ~broom::tidy)) %>% 
-  select(-data) %>% 
-  unnest()
+  mutate(models_tidy = map(models, ~broom::tidy(.))) %>% 
+  mutate(models_ci = map(models, ~broom::confint_tidy(.))) %>% 
+  select(city_state, models_tidy, models_ci) %>% 
+  unnest() %>% 
+  mutate(OR = exp(estimate), OR.conf.low = exp(conf.low), OR.conf.high = exp(conf.high)) %>% 
+  filter(term == "raceNon-White") %>% 
+  select(city_state, starts_with("OR"))
 ```
 
 
