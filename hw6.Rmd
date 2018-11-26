@@ -60,12 +60,12 @@ balt_tidy <- baltimore %>%
   filter(term == "raceNon-White")
 ```
 
-Our estimate of the odds ratio for solved homicides is `r balt_tidy %>%  mutate(estimate = round(exp(estimate), 3)) %>% select(estimate)`. We are 95% confident that the true odds ratio for solving homicides, comparing non-Whites to whites is (`r balt_tidy %>% mutate(conf.low = round(exp(conf.low), 3)) %>% select(conf.low)`, `r balt_tidy %>%  mutate(conf.high = round(exp(conf.high), 3)) %>% select(conf.high)`).
+Our estimate of the odds ratio for unresolved homicides is `r balt_tidy %>%  mutate(estimate = round(exp(estimate), 3)) %>% select(estimate)`, comparing non-Whites to Whites. We are 95% confident that the true odds ratio for unsolved homicides, comparing non-Whites to whites is (`r balt_tidy %>% mutate(conf.low = round(exp(conf.low), 3)) %>% select(conf.low)`, `r balt_tidy %>%  mutate(conf.high = round(exp(conf.high), 3)) %>% select(conf.high)`).
 
 *"Now run glm for each of the cities in your dataset, and extract the adjusted odds ratio (and CI) for solving homicides comparing non-white victims to white victims. Do this within a “tidy” pipeline, making use of purrr::map, list columns, and unnest as necessary to create a dataframe with estimated ORs and CIs for each city."*
 
 ```{r}
-homicides %>% 
+homicides_or <- homicides %>% 
   select(victim_age, victim_sex, city_state, race, status) %>% 
   mutate(status = as.factor(status)) %>% 
   filter(victim_sex != "Unknown") %>% 
@@ -81,8 +81,26 @@ homicides %>%
   select(city_state, starts_with("OR"))
 ```
 
+*"Create a plot that shows the estimated ORs and CIs for each city. Organize cities according to estimated OR, and comment on the plot."*
 
-Create a plot that shows the estimated ORs and CIs for each city. Organize cities according to estimated OR, and comment on the plot.
+```{r}
+homicides_or %>% 
+  mutate(city_state = reorder(city_state, OR)) %>% 
+  ggplot(aes(x = city_state, y = OR)) +
+    geom_errorbar(aes(ymin = OR.conf.low, ymax = OR.conf.high), width = .1) +
+    geom_point() + 
+    labs(
+      title = "Odds Ratio for Unsolved Homicides: \nComparing Non-White Victims to White Victims", 
+      y = "OR",
+      x = "", 
+      caption = "The red line indicates the null value for the odds ratio, 1."
+    ) +
+    geom_hline(yintercept = 1, color = "red", alpha = 0.5) +
+    theme_bw() + 
+    theme(legend.position = "bottom", axis.text.x = element_text(angle = 80, hjust = 1))
+
+```
+
 
 ### Problem 2
 In this probelm, you will analyze data gathered to understand the effects of several variables on a child’s birthweight. This dataset, available here, consists of roughly 4000 children and includes the following variables:
